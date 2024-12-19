@@ -1,0 +1,51 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/app/static
+      - media_volume:/app/media
+    expose:
+      - 8000
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings-prod
+      - DJANGO_SECRET_KEY=your-production-secret-key-here
+      - POSTGRES_DB=django_db_prod
+      - POSTGRES_USER=django_user_prod
+      - POSTGRES_PASSWORD=django_password_prod
+      - EMAIL_HOST_USER=your-email@example.com
+      - EMAIL_HOST_PASSWORD=your-email-password
+    depends_on:
+      - db
+      - memcached
+
+  db:
+    image: postgres:latest
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=django_db_prod
+      - POSTGRES_USER=django_user_prod
+      - POSTGRES_PASSWORD=django_password_prod
+
+  memcached:
+    image: memcached:latest
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    volumes:
+      - static_volume:/app/static
+      - media_volume:/app/media
+    ports:
+      - "80:80"
+    depends_on:
+      - web
+
+volumes:
+  postgres_data_prod:
+  static_volume:
+  media_volume:
