@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2
     volumes:
       - static_volume:/app/static
       - media_volume:/app/media
@@ -11,15 +11,21 @@ services:
       - 8000
     environment:
       - DJANGO_SETTINGS_MODULE=core.settings-prod
-      - DJANGO_SECRET_KEY=your-production-secret-key-here
+      - DJANGO_SECRET_KEY=django-insecure-production-key-example
       - POSTGRES_DB=django_db_prod
       - POSTGRES_USER=django_user_prod
       - POSTGRES_PASSWORD=django_password_prod
-      - EMAIL_HOST_USER=your-email@example.com
-      - EMAIL_HOST_PASSWORD=your-email-password
     depends_on:
-      - db
-      - memcached
+      db:
+        condition: service_healthy
+      memcached:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   db:
     image: postgres:latest
@@ -29,9 +35,22 @@ services:
       - POSTGRES_DB=django_db_prod
       - POSTGRES_USER=django_user_prod
       - POSTGRES_PASSWORD=django_password_prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U django_user_prod -d django_db_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   memcached:
     image: memcached:latest
+    command: memcached -v
+    healthcheck:
+      test: ["CMD-SHELL", "pidof memcached || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   nginx:
     build:
@@ -43,7 +62,13 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - web
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres_data_prod:

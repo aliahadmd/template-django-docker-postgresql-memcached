@@ -1,18 +1,63 @@
-FROM python:3.13.1-slim
+# Build stage
+FROM python:3.13.1-slim as builder
 
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install gunicorn
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
 
-COPY . .
+# Final stage
+FROM python:3.13.1-slim
 
-# Create static and media directories
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV DJANGO_SETTINGS_MODULE core.settings-prod
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN addgroup --system django \
+    && adduser --system --ingroup django django
+
+# Copy wheels from builder
+COPY --from=builder /app/wheels /wheels
+COPY --from=builder /app/requirements.txt .
+RUN pip install --no-cache /wheels/*
+
+# Copy project
+COPY --chown=django:django . .
+
+# Create and set permissions for media and static directories
 RUN mkdir -p /app/static /app/media \
-    && chmod -R 755 /app/static /app/media
+    && chown -R django:django /app/static /app/media \
+    && chmod -R 755 /app/static /app/media \
+    && chmod +x /app/entrypoint.sh
 
-RUN DJANGO_SETTINGS_MODULE=core.settings-prod python manage.py collectstatic --noinput
+USER django
+
+# Collect static files
+RUN python manage.py collectstatic --noinput
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
