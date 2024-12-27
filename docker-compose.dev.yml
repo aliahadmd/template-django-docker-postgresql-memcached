@@ -31,5 +31,18 @@ services:
     ports:
       - "11211:11211"
 
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    environment:
+      - ADMINER_DEFAULT_SERVER=db
+      - ADMINER_DEFAULT_USERNAME=django_user
+      - ADMINER_DEFAULT_PASSWORD=django_password
+      - ADMINER_DEFAULT_DATABASE=django_db
+      - ADMINER_DESIGN=dracula # Modern dark theme
+
 volumes:
   postgres_data_dev:
